@@ -6,7 +6,7 @@ Follows a link to a 'Privacy Policy' and reads the content at that page.
 
 Outputs a word-frequency count of the visible text on that page. """
 
-from typing import Literal, Dict
+from typing import Any, Dict
 from string import punctuation
 import json
 import re
@@ -14,114 +14,78 @@ import requests
 from requests import Response
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString, PageElement
-from classes import PageResources, WebResource
 
 
-def get_page_content(url: str = "") -> Response:
-    """Uses requests to get a webpage, takes a single 'url' param.
+def get_page_content(
+    url: str = "https://www.cfcunderwriting.com/en-gb/",
+) -> Response:
+    """Uses requests to get a webpage, takes a single 'url' param."""
+    page = requests.get(url)
 
-    If no url is provided, defaults to https://www.cfcunderwriting.com/en-gb/."""
-    page = (
-        requests.get(url)
-        if url
-        else requests.get("https://www.cfcunderwriting.com/en-gb/")
-    )
     return page.content
 
 
 def descendant_loads_external_resource(
-    descendant: BeautifulSoup or Tag or NavigableString,
-) -> bool:
-    """Takes a Beautiful Soup 'descendant' object and returns T if it loads content hosted elsewhere.
+    descendant: PageElement, domain: str = "cfcunderwriting.com"
+) -> bool or Exception:
+    """
+    Return True if PageElement 'loads an external resource'. False if not.
 
-    Beautiful Soup uses four classes to represent a DOM tree: Tag, NavigableString, BeautifulSoup, and Comments.
 
-    For our current purposes we can ignore NavigableStrings, and comments (because they are essentially just strings).
+    An element 'loads and external resource' iff:
+        - it it a Tag
+        - and it's not an <a> tag
+        - and its attributes dict includes 'src' or 'href' as a key
+        - and the value of the attribute at that key startsWith 'http'
+        - and the attribute links to a different domain.
 
-    We also call this with object.descendants in our list comprehension so we expect that class attribute to flatten
-    the arguments in the scope we return to - therefore we don't expect this to be called with BeautifulSoup instances
-    in this module.
-
-    Thus, an element 'loads and external resource' iff it it a Tag
-                                                   and it's not an <a> tag
-                                                   and its attributes dict includes 'src' or 'href' as a key
-                                                   and the value of the attribute at that key startsWith 'http'.
-
-    Admittedly, this is not super finegrained since we should actually check that the domain is external to the
-    page being scraped - but that would also be a bit odd & we're not aiming for perfection.
+    Exceptions:
+    - Raised if function is invoked with an instance of Beautiful Soup.
 
     """
     if isinstance(descendant, Tag):
+        uri = descendant.get("src", descendant.get("href"))
         if not descendant.name == "a" and (
             (
-                "src" in descendant.attrs.keys()
-                and descendant["src"].startswith("http")
-            )
-            or (
-                "href" in descendant.attrs.keys()
-                and descendant["href"].startswith("http")
+                (
+                    "src" in descendant.attrs.keys()
+                    and descendant["src"].startswith("http")
+                )
+                or (
+                    "href" in descendant.attrs.keys()
+                    and descendant["href"].startswith("http")
+                )
+                and re.search(f"^http.{{0,1}}://\w{{0,63}}\.{domain}", uri)
+                is None
             )
         ):
+
             return True
     elif isinstance(descendant, BeautifulSoup):
-        # we don't expect this exception to be raised - I'm not even sure it's a necessary branch
-        return descendant_loads_external_resource(descendant)
+        # Just in case
+        raise Exception(
+            "Invoked with BeautifulSoup. Try using .descendants() attribute."
+        )
     else:
         return False
 
 
-def element_to_resource(
-    resources: PageResources,
-    element: PageElement,
-    resource_type: Literal["web", "file"],
-) -> PageElement:
-    """Takes a BeautifulSoup PageElement and appends it to an instance of the External Resources object.
-
-    The property accesses are chained during the WebResource instantiation.
-    PageElements may have either an 'href' or a 'src' and we are interested in either.
-    If we have neither, that is an error."""
-    if resource_type == "web":
-        resources.add_web_resource(
-            WebResource(
-                str(element.get("rel", "undefined")),
-                str(
-                    element.attrs.get("href", element.attrs.get("src", "error"))
-                ),
-                str(element.name),
-            )
-        )
-    elif resource_type == "file":
-        resources.add_file_resource(
-            WebResource(
-                str(element.get("rel", "undefined")),
-                str(
-                    element.attrs.get("href", element.attrs.get("src", "error"))
-                ),
-                str(element.name),
-            )
-        )
-    else:
-        raise f"Unknown resource_type: {resource_type}"
+def element_to_uri(
+    element: Tag,
+) -> str:
+    """Return external resource URI"""
+    return (str(element.attrs.get("href", element.attrs.get("src", "error"))),)
 
 
 def get_external_resources_from_elements(
     elements: list[PageElement],
-) -> PageResources:
-    """Instantiates PageResources and appends elements to its web_resources"""
-    resource_instance = PageResources("https://www.cfcunderwriting.com/en-gb/")
-    for element in elements:
-        element_to_resource(resource_instance, element, "web")
-    return external_resources
+) -> list[str]:
+    """List external resource URIs"""
+    return [element_to_uri(element)[0] for element in elements]
 
 
-def enumerate_external_resources(page_soup: BeautifulSoup) -> PageResources:
-    """Takes a BeatifulSoup object and enumerates external resources for the page it represents.
-
-    For the purpose of this exercise we consider that resources in <a> HTML elements do not count as "externally
-    loaded resoures". Since <link> attributes may link to style sheets or icons, they *are* included in the output from this function.
-
-    Returns a JSON representation of those resources using the following schema:
-    """
+def enumerate_external_resources(page_soup: BeautifulSoup) -> list[str]:
+    """Return a list of page elements that load external resources."""
 
     external_resource_elements = [
         descendant
@@ -132,19 +96,28 @@ def enumerate_external_resources(page_soup: BeautifulSoup) -> PageResources:
     return get_external_resources_from_elements(external_resource_elements)
 
 
-def output_resources_to_file(
-    resources: PageResources or Dict[str, int],
-    path: str = "./external_resources.json",
-) -> None:
-    """Takes an object as JSON and writes it to file. Accepts optional path parameter."""
+def output_to_file(output: Any, path: str = "./external_resources.json"):
+    """Output object to file"""
     with open(path, "w+", encoding="utf-8") as file:
-        # json doesn't know how to serialise many objects,
-        # default lambda is invoked when object attribute
-        # isn't straightforwardly serialisable (e.g. instance methods)
-        json.dump(resources, file, indent=2, default=lambda x: x.__dict__)
+        json.dump(
+            output,
+            file,
+            indent=2,
+            default=lambda x: x.__dict__,
+        )
 
 
-def is_link(descendant: BeautifulSoup or Tag or NavigableString):
+def output_resources_to_file(
+    resources: list[str],
+    path: str = "./external_resources.json",
+    url: str = "https://www.cfcunderwriting.com/en-gb/",
+) -> None:
+    """Output JSON representation to file."""
+    page_external_resources = {"url": url, "external_resources": resources}
+    output_to_file(page_external_resources, path)
+
+
+def is_link(descendant: BeautifulSoup or Tag or NavigableString) -> bool:
     """Returns True if given an anchor tag from a BeautifulSoup"""
     if descendant.name == "a":
         return True
@@ -167,8 +140,8 @@ def get_privacy_policy_content(
     page_links: list[PageElement],
     base_url: str = "https://www.cfcunderwriting.com/en-gb/",
 ) -> Response or Exception:
-    """Iterates through page links using regex matching to guess the Privacy Policy url. Returns page content"""
-    # could have 'enumerated' list elements, but wouldn't have used the index from the tuple for anything
+    """Iterate over page to find Privacy Policy url. Returns its content."""
+    # built-in enumerate is available, but the link index does no work
     possible_links = list(
         set(
             [
@@ -190,19 +163,15 @@ def get_privacy_policy_content(
     )
 
 
-# questionable type annotation
-
-
 def count_words(text: str) -> Dict[str, int]:
-    """Takes a space-separated block of text. Returns a dictionary with words as keys, and frequencies as values."""
+    """Return a dictionary with words as keys, and frequencies as values."""
     counter = {}
     for word in text.split(" "):
-        # if a word consists only of punctuation, it counts as garbage
+        # if a 'word' consists only of punctuation, ignore it
         if all(char in punctuation for char in word):
             continue
-        # this is technically case-insensitive, but not subtle, words that include punctuation are not well counted
+        # this is technically case-insensitive, but not subtle
         counter_key = str(word).upper()
-        print(counter_key)
         # inelegant casting, open to alternative suggestions
         if counter.get(counter_key):
             counter[counter_key] += 1
@@ -214,28 +183,23 @@ def count_words(text: str) -> Dict[str, int]:
 def output_case_insensitive_word_frequency(
     page_content: Response, output_path: str = "./word_frequencies.json"
 ) -> None:
-    """Takes page content, outputs case-insensitive word frequency to file"""
+    """Output case-insensitive word frequency to file"""
     visible_page_text = BeautifulSoup(page_content, "html.parser").get_text(
         " ", strip=True
     )
-    print(visible_page_text)
+
     freq = count_words(visible_page_text)
-    output_resources_to_file(
-        freq, output_path if output_path else "./word_frequencies.json"
-    )
+    output_to_file(freq, output_path)
 
 
 if __name__ == "__main__":
-
-    input_url = input(
-        "specify a url (defaults to'https://www.cfcunderwriting.com/en-gb/)':"
-    )
-    index_page_content = get_page_content(input_url if input_url else "")
+    # currently no user input, although it could be pointed at a different page
+    index_page_content = get_page_content()
     index_page_soup = BeautifulSoup(index_page_content, "html.parser")
     external_resources = enumerate_external_resources(index_page_soup)
     output_resources_to_file(external_resources)
-    # I would have prefered something like privacy_policy = page_soup.find_all('a', string=re.compile('privacy.+policy', 'i'))
-    # for brevity but the task says 'enumerates the links' so opted for consistent code style
+    # soup.find_all('a', string=re.compile('privacy.+policy', 'i'))'
+    # for brevity but the task says 'enumerates the links'
     links = get_page_links(index_page_soup)
     privacy_policy_content = get_privacy_policy_content(links)
     output_case_insensitive_word_frequency(privacy_policy_content)
