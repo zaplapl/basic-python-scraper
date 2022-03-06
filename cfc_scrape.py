@@ -29,29 +29,35 @@ def descendant_loads_external_resource(
     descendant: PageElement, domain: str = "cfcunderwriting.com"
 ) -> bool or Exception:
     """
-    Return True if the PageElement 'loads an external resource'. Return False if not.
+    Return True if PageElement 'loads an external resource'. False if not.
 
-    Raise and Exception if function is invoked with an instance of Beautiful Soup.
-    It is not implemented to handle recursion.
 
     An element 'loads and external resource' iff:
         - it it a Tag
         - and it's not an <a> tag
         - and its attributes dict includes 'src' or 'href' as a key
-        - and the value of the attribute at that key startsWith 'http'.
+        - and the value of the attribute at that key startsWith 'http'
+        - and the attribute links to a different domain.
+
+    Exceptions:
+    - Raised if function is invoked with an instance of Beautiful Soup.
+
     """
     if isinstance(descendant, Tag):
         uri = descendant.get("src", descendant.get("href"))
         if not descendant.name == "a" and (
             (
-                "src" in descendant.attrs.keys()
-                and descendant["src"].startswith("http")
+                (
+                    "src" in descendant.attrs.keys()
+                    and descendant["src"].startswith("http")
+                )
+                or (
+                    "href" in descendant.attrs.keys()
+                    and descendant["href"].startswith("http")
+                )
+                and re.search(f"^http.{{0,1}}://\w{{0,63}}\.{domain}", uri)
+                is None
             )
-            or (
-                "href" in descendant.attrs.keys()
-                and descendant["href"].startswith("http")
-            )
-            and not re.search("http.{1,2}://" + f"{domain}.+", uri) is None
         ):
 
             return True
@@ -64,18 +70,18 @@ def descendant_loads_external_resource(
         return False
 
 
-def element_to_resource(
+def element_to_uri(
     element: Tag,
-) -> PageElement:
+) -> str:
     """Return external resource URI"""
     return (str(element.attrs.get("href", element.attrs.get("src", "error"))),)
 
 
 def get_external_resources_from_elements(
     elements: list[PageElement],
-) -> NamedTuple("PageResources", [("url", str), ("web_resources", list)]):
+) -> list[str]:
     """List external resource URIs"""
-    return [element_to_resource(element)[0] for element in elements]
+    return [element_to_uri(element)[0] for element in elements]
 
 
 def enumerate_external_resources(page_soup: BeautifulSoup) -> list[str]:
@@ -111,7 +117,7 @@ def output_resources_to_file(
     output_to_file(page_external_resources, path)
 
 
-def is_link(descendant: BeautifulSoup or Tag or NavigableString):
+def is_link(descendant: BeautifulSoup or Tag or NavigableString) -> bool:
     """Returns True if given an anchor tag from a BeautifulSoup"""
     if descendant.name == "a":
         return True
@@ -134,8 +140,8 @@ def get_privacy_policy_content(
     page_links: list[PageElement],
     base_url: str = "https://www.cfcunderwriting.com/en-gb/",
 ) -> Response or Exception:
-    """Iterate through page to guess a single Privacy Policy url. Returns its content."""
-    # could have 'enumerated' list elements, but wouldn't have used the index from the tuple for anything
+    """Iterate over page to find Privacy Policy url. Returns its content."""
+    # built-in enumerate is available, but the link index does no work
     possible_links = list(
         set(
             [
@@ -164,7 +170,7 @@ def count_words(text: str) -> Dict[str, int]:
         # if a 'word' consists only of punctuation, ignore it
         if all(char in punctuation for char in word):
             continue
-        # this is technically case-insensitive, but not subtle, words that include punctuation are not well counted
+        # this is technically case-insensitive, but not subtle
         counter_key = str(word).upper()
         # inelegant casting, open to alternative suggestions
         if counter.get(counter_key):
@@ -192,8 +198,8 @@ if __name__ == "__main__":
     index_page_soup = BeautifulSoup(index_page_content, "html.parser")
     external_resources = enumerate_external_resources(index_page_soup)
     output_resources_to_file(external_resources)
-    # I would have prefered something like privacy_policy = page_soup.find_all('a', string=re.compile('privacy.+policy', 'i'))
-    # for brevity but the task says 'enumerates the links' so opted for consistent code style
+    # soup.find_all('a', string=re.compile('privacy.+policy', 'i'))'
+    # for brevity but the task says 'enumerates the links'
     links = get_page_links(index_page_soup)
     privacy_policy_content = get_privacy_policy_content(links)
     output_case_insensitive_word_frequency(privacy_policy_content)
