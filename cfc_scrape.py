@@ -11,18 +11,15 @@ from string import punctuation
 import json
 import re
 import requests
+import click
+
 from requests import Response
 from bs4 import BeautifulSoup, Tag
-from bs4.element import NavigableString, PageElement
+from bs4.element import PageElement
 
 
-def get_page_content(
-    url: str = "https://www.cfcunderwriting.com/en-gb/",
-) -> Response:
-    """Uses requests to get a webpage, takes a single 'url' param."""
-    page = requests.get(url)
-
-    return page.content
+URL = "https://www.cfcunderwriting.com/en-gb/"
+PATH = "./external_resources.json"
 
 
 def descendant_loads_external_resource(
@@ -30,7 +27,6 @@ def descendant_loads_external_resource(
 ) -> bool or Exception:
     """
     Return True if PageElement 'loads an external resource'. False if not.
-
 
     An element 'loads and external resource' iff:
         - it it a Tag
@@ -41,7 +37,6 @@ def descendant_loads_external_resource(
 
     Exceptions:
     - Raised if function is invoked with an instance of Beautiful Soup.
-
     """
     if isinstance(descendant, Tag):
         uri = descendant.get("src", descendant.get("href"))
@@ -55,6 +50,7 @@ def descendant_loads_external_resource(
                     "href" in descendant.attrs.keys()
                     and descendant["href"].startswith("http")
                 )
+                # dns labels are at most 63 characters long
                 and re.search(f"^http.{{0,1}}://\w{{0,63}}\.{domain}", uri)
                 is None
             )
@@ -63,25 +59,11 @@ def descendant_loads_external_resource(
             return True
     elif isinstance(descendant, BeautifulSoup):
         # Just in case
-        raise Exception(
+        raise RuntimeError(
             "Invoked with BeautifulSoup. Try using .descendants() attribute."
         )
     else:
         return False
-
-
-def element_to_uri(
-    element: Tag,
-) -> str:
-    """Return external resource URI"""
-    return (str(element.attrs.get("href", element.attrs.get("src", "error"))),)
-
-
-def get_external_resources_from_elements(
-    elements: list[PageElement],
-) -> list[str]:
-    """List external resource URIs"""
-    return [element_to_uri(element)[0] for element in elements]
 
 
 def enumerate_external_resources(page_soup: BeautifulSoup) -> list[str]:
@@ -93,10 +75,13 @@ def enumerate_external_resources(page_soup: BeautifulSoup) -> list[str]:
         if descendant_loads_external_resource(descendant)
     ]
 
-    return get_external_resources_from_elements(external_resource_elements)
+    def element_to_uri(element):
+        return str(element.attrs.get("href", element.attrs.get("src", "err")))
+
+    return [element_to_uri(element) for element in external_resource_elements]
 
 
-def output_to_file(output: Any, path: str = "./external_resources.json"):
+def output_to_file(output: Any, path: str) -> None:
     """Output object to file"""
     with open(path, "w+", encoding="utf-8") as file:
         json.dump(
@@ -109,30 +94,20 @@ def output_to_file(output: Any, path: str = "./external_resources.json"):
 
 def output_resources_to_file(
     resources: list[str],
-    path: str = "./external_resources.json",
-    url: str = "https://www.cfcunderwriting.com/en-gb/",
+    resource_path: str,
+    url: str = URL,
 ) -> None:
     """Output JSON representation to file."""
     page_external_resources = {"url": url, "external_resources": resources}
-    output_to_file(page_external_resources, path)
-
-
-def is_link(descendant: BeautifulSoup or Tag or NavigableString) -> bool:
-    """Returns True if given an anchor tag from a BeautifulSoup"""
-    if descendant.name == "a":
-        return True
-    return False
+    output_to_file(page_external_resources, resource_path)
 
 
 def get_page_links(page_soup: BeautifulSoup) -> list[PageElement]:
-    """List comprehension for anchor tag elements in BeautifulSoup
-
-    We could have written a lambda expression, but chose to pass in
-    a function in case it might be re-used later."""
+    """List comprehension for anchor tag elements in BeautifulSoup"""
     return [
         descendant
         for descendant in page_soup.descendants
-        if (is_link(descendant))
+        if (descendant.name == "a")
     ]
 
 
@@ -155,12 +130,14 @@ def get_privacy_policy_content(
         raise Exception(
             "we found more than 1 suitable link for the Privacy Policy"
         )
-        # cast to str() not strictly necessary
-    return get_page_content(
+
+    content_url = (
         possible_links[0]
         if str(possible_links[0]).startswith("http")
         else base_url + possible_links[0]
     )
+
+    return requests.get(content_url).content
 
 
 def count_words(text: str) -> Dict[str, int]:
@@ -171,7 +148,7 @@ def count_words(text: str) -> Dict[str, int]:
         if all(char in punctuation for char in word):
             continue
         # this is technically case-insensitive, but not subtle
-        counter_key = str(word).upper()
+        counter_key = word.upper()
         # inelegant casting, open to alternative suggestions
         if counter.get(counter_key):
             counter[counter_key] += 1
@@ -192,14 +169,25 @@ def output_case_insensitive_word_frequency(
     output_to_file(freq, output_path)
 
 
-if __name__ == "__main__":
-    # currently no user input, although it could be pointed at a different page
-    index_page_content = get_page_content()
-    index_page_soup = BeautifulSoup(index_page_content, "html.parser")
-    external_resources = enumerate_external_resources(index_page_soup)
-    output_resources_to_file(external_resources)
+@click.command()
+@click.option("--url", default=URL, help="The URL")
+@click.option("--path", default=PATH, help="File output path")
+def main(url: str = URL, path: str = PATH):
+    """Run scan an output artefacts."""
+    content = requests.get(url).content
+    soup = BeautifulSoup(content, "html.parser")
+    external_resources = enumerate_external_resources(soup)
+
+    output_resources_to_file(external_resources, path)
+
     # soup.find_all('a', string=re.compile('privacy.+policy', 'i'))'
     # for brevity but the task says 'enumerates the links'
-    links = get_page_links(index_page_soup)
-    privacy_policy_content = get_privacy_policy_content(links)
-    output_case_insensitive_word_frequency(privacy_policy_content)
+    links = get_page_links(soup)
+    contents = get_privacy_policy_content(links)
+    output_case_insensitive_word_frequency(contents)
+
+
+if __name__ == "__main__":
+    # TODO test branch coverage, exceptions, HTTPError handling
+    # TODO handle URL & PATH intelligently
+    main()
