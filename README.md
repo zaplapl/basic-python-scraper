@@ -7,8 +7,8 @@ This project contains a module that:
   on cfcunderwriting.com) to a JSON output file.
 - Enumerates the page's hyperlinks and identifies the location of the "Privacy Policy"
   page
-- Use the privacy policy URL identified in step 3 and scrape the pages content.
-  Produce a case-insentitive word frequency count for all of the visible text on the page. Your frequency count should also be written to a JSON output file.
+- Uses the privacy policy URL identified above and scrapes the pages content.
+- Produces JSON file output of a case-insentitive word frequency count for all of the visible text on that page.
 
 ## Running instructiong
 
@@ -17,8 +17,6 @@ This project was written using Python version 3.6 and is designed to be forwards
 We recommend using pyenv, and include a .gitignore file for convenience.
 
 The requirements.txt contains a list of dependencies that should be available in your environment.
-
-A small number of user-defined classes are provided in classes.py - they are not terribly sophisticated.
 
 The module itself is pretty straightforward, and imports modules from well known libraries.
 
