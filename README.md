@@ -7,7 +7,7 @@ This project contains a module that:
   on cfcunderwriting.com) to a JSON output file.
 - Enumerates the page's hyperlinks and identifies the location of the "Privacy Policy"
   page
-- Uses the privacy policy URL identified in step 3 and scrapes the pages content.
+- Uses the privacy policy URL identified above and scrapes the pages content.
 - Produces JSON file output of a case-insentitive word frequency count for all of the visible text on that page.
 
 ## Running instructiong
