@@ -6,7 +6,7 @@ Follows a link to a 'Privacy Policy' and reads the content at that page.
 
 Outputs a word-frequency count of the visible text on that page. """
 
-from typing import Any, Dict, NamedTuple
+from typing import Any, Dict
 from string import punctuation
 import json
 import re
