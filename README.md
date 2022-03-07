@@ -21,7 +21,10 @@ The requirements.txt contains a list of dependencies that should be available in
 The module itself is pretty straightforward, and imports other modules from well known libraries.
 
 It is designed to be run from the command line:
-'''pip install -r requirements.txt
-python cfc_scrape.py'''
+
+```
+pip install -r requirements.txt
+python cfc_scrape.py
+```
 
 Although we provide --url and --path as command line arguments, these are 'edge' options that probably won't work as expected.
