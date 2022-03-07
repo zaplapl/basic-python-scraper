@@ -6,7 +6,7 @@ Follows a link to a 'Privacy Policy' and reads the content at that page.
 
 Outputs a word-frequency count of the visible text on that page. """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 from string import punctuation
 import json
 import re
@@ -66,7 +66,7 @@ def descendant_loads_external_resource(
         return False
 
 
-def enumerate_external_resources(page_soup: BeautifulSoup) -> list[str]:
+def enumerate_external_resources(page_soup: BeautifulSoup) -> List[str]:
     """Return a list of page elements that load external resources."""
 
     external_resource_elements = [
@@ -93,7 +93,7 @@ def output_to_file(output: Any, path: str) -> None:
 
 
 def output_resources_to_file(
-    resources: list[str],
+    resources: List[str],
     resource_path: str,
     url: str = URL,
 ) -> None:
@@ -102,7 +102,7 @@ def output_resources_to_file(
     output_to_file(page_external_resources, resource_path)
 
 
-def get_page_links(page_soup: BeautifulSoup) -> list[PageElement]:
+def get_page_links(page_soup: BeautifulSoup) -> List[PageElement]:
     """List comprehension for anchor tag elements in BeautifulSoup"""
     return [
         descendant
@@ -112,7 +112,7 @@ def get_page_links(page_soup: BeautifulSoup) -> list[PageElement]:
 
 
 def get_privacy_policy_content(
-    page_links: list[PageElement],
+    page_links: List[PageElement],
     base_url: str = "https://www.cfcunderwriting.com/en-gb/",
 ) -> Response or Exception:
     """Iterate over page to find Privacy Policy url. Returns its content."""
@@ -144,8 +144,8 @@ def count_words(text: str) -> Dict[str, int]:
     """Return a dictionary with words as keys, and frequencies as values."""
     counter = {}
     for word in text.split(" "):
-        # if a 'word' consists only of punctuation, ignore it
-        if all(char in punctuation for char in word):
+        # if a 'word' consists only of punctuation or non-ascii chars, ignore it
+        if all(char in punctuation or char.encode("ascii", "ignore") == b'' for char in word):
             continue
         # this is technically case-insensitive, but not subtle
         counter_key = word.upper()
