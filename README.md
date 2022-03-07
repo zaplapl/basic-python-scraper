@@ -22,4 +22,4 @@ The module itself is pretty straightforward, and imports other modules from well
 
 It is designed to be run from the command line. 
 
-Although we prompt you to provide an alternative URL, this is an 'edge' feature that has not been tested to any great extent.
+Although we provide --url and --path as command line arguments, these are 'edge' options that probably won't work as expected.
