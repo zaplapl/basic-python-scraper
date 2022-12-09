@@ -10,7 +10,7 @@ This project contains a module that:
 - Uses the privacy policy URL identified above and scrapes the page's content.
 - Produces JSON file output of a case-insentitive word frequency count for all of the visible text on that page.
 
-## Running instructiong
+## Running instructions
 
 This project was written using Python version 3.6 and is designed to be forwards-compatible.
 
